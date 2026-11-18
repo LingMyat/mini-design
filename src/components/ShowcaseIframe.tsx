@@ -14,9 +14,46 @@ export function ShowcaseIframe({
   title,
   className = '',
 }: ShowcaseIframeProps) {
-  // Inject clean scrollbar and reset CSS if not present
+  // Inject clean scrollbar, reset CSS, and touch swipe listener
   const processedHtml = useMemo(() => {
     if (!htmlCode) return '<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;">Empty Screen</body></html>';
+
+    // Script to capture horizontal swipe gestures and notify parent window
+    const swipeScript = `
+      <script>
+        (function() {
+          var startX = 0;
+          var startY = 0;
+          var startTime = 0;
+
+          window.addEventListener('touchstart', function(e) {
+            if (e.touches && e.touches.length === 1) {
+              startX = e.touches[0].clientX;
+              startY = e.touches[0].clientY;
+              startTime = Date.now();
+            }
+          }, { passive: true });
+
+          window.addEventListener('touchend', function(e) {
+            if (e.changedTouches && e.changedTouches.length === 1) {
+              var deltaX = e.changedTouches[0].clientX - startX;
+              var deltaY = e.changedTouches[0].clientY - startY;
+              var elapsed = Date.now() - startTime;
+
+              // Horizontal swipe: > 40px distance, predominantly horizontal, under 550ms
+              if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2 && elapsed < 550) {
+                try {
+                  window.parent.postMessage({
+                    type: 'SHOWCASE_SWIPE',
+                    direction: deltaX < 0 ? 'next' : 'prev'
+                  }, '*');
+                } catch(err) {}
+              }
+            }
+          }, { passive: true });
+        })();
+      </script>
+    `;
 
     // If it's already a full HTML document, inject viewport meta if missing, smooth font rendering & styling
     if (htmlCode.includes('<html') || htmlCode.includes('<!DOCTYPE')) {
@@ -33,6 +70,7 @@ export function ShowcaseIframe({
           * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
           html, body { min-height: 100%; margin: 0; }
         </style>
+        ${swipeScript}
       `;
       if (htmlCode.includes('</head>')) {
         return htmlCode.replace('</head>', `${injectStyle}</head>`);
@@ -55,6 +93,7 @@ export function ShowcaseIframe({
           ::-webkit-scrollbar-track { background: transparent; }
           ::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.3); border-radius: 4px; }
         </style>
+        ${swipeScript}
       </head>
       <body>
         ${htmlCode}

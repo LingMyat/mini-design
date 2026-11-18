@@ -75,6 +75,21 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
     }
   };
 
+  // Listen for iframe-based swipe messages
+  useEffect(() => {
+    const handleSwipeMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'SHOWCASE_SWIPE') {
+        if (e.data.direction === 'next') {
+          setActivePageIndex((prev) => Math.min(prev + 1, template.pages.length - 1));
+        } else if (e.data.direction === 'prev') {
+          setActivePageIndex((prev) => Math.max(prev - 1, 0));
+        }
+      }
+    };
+    window.addEventListener('message', handleSwipeMessage);
+    return () => window.removeEventListener('message', handleSwipeMessage);
+  }, [template.pages.length]);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -237,22 +252,22 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
   if (isMobile) {
     return (
       <div className="fixed inset-0 w-full h-full bg-[#0a0b10] text-white select-none overflow-hidden">
-        {/* Story Progress Indicators at the very top edge */}
-        <div className="absolute top-1.5 left-2.5 right-2.5 z-40 flex gap-1 pointer-events-auto">
+        {/* Story Progress Indicators at the very top edge - Slim and refined */}
+        <div className="absolute top-1.5 left-4 right-4 z-40 flex items-center gap-1.5 pointer-events-auto bg-[#0a0b10]/75 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 shadow-sm">
           {template.pages.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setActivePageIndex(idx)}
-              className="h-2 flex-1 flex items-center py-0.5 focus:outline-none"
-              title={`Jump to screen ${idx + 1}`}
+              className="py-0.5 flex-1 flex items-center focus:outline-none active:opacity-60 transition"
+              title={`Screen ${idx + 1}: ${template.pages[idx]?.name || ''}`}
             >
               <div
-                className={`h-[2.5px] w-full rounded-full transition-all duration-300 ${
+                className={`h-[2.5px] w-full rounded-full transition-all duration-200 ${
                   idx === activePageIndex
-                    ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.9)]'
+                    ? 'bg-indigo-400 ring-1 ring-indigo-300 shadow-[0_0_6px_rgba(129,140,248,0.8)]'
                     : idx < activePageIndex
-                    ? 'bg-white/40'
-                    : 'bg-white/15'
+                    ? 'bg-white/50'
+                    : 'bg-white/20'
                 }`}
               />
             </button>
@@ -261,7 +276,7 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
 
         {/* Floating Top Header Pill — Does NOT take layout space */}
         {showControls && (
-          <div className="absolute top-4 left-3 right-3 z-40 flex items-center justify-between pointer-events-none animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="absolute top-9 left-3 right-3 z-40 flex items-center justify-between pointer-events-none animate-in fade-in slide-in-from-top-1 duration-200">
             {/* Left: Template title & page counter */}
             <div className="pointer-events-auto flex items-center gap-2 bg-[#0a0b10]/80 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1 shadow-lg shadow-black/50">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -318,9 +333,9 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
           </div>
         )}
 
-        {/* 100% FULL-SCREEN HTML SHOWCASE CONTENT */}
+        {/* 100% FULL-SCREEN HTML SHOWCASE CONTENT (top padding ensures breathing room below top indicator) */}
         <div 
-          className="absolute inset-0 z-0 w-full h-full"
+          className="absolute inset-x-0 top-8 bottom-0 z-0"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -398,16 +413,21 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
             {/* Guide Spotlight highlights based on step */}
             {guideStep === 1 && (
               <>
-                {/* Visual indicator for Top Story Bars */}
-                <div className="absolute top-1 left-2 right-2 h-7 rounded-xl ring-2 ring-indigo-400 ring-offset-2 ring-offset-black/50 pointer-events-none animate-pulse flex items-end justify-center pb-0.5">
-                  <span className="text-[10px] font-bold text-indigo-300 bg-black/80 px-2 py-0.5 rounded-full border border-indigo-500/40 shadow-lg">
-                    👆 နှိပ်၍ တိုက်ရိုက်ကူးပြောင်းနိုင်သည်
+                {/* Visual spotlight framing the Top Story Bars cleanly */}
+                <div className="absolute top-1 left-3.5 right-3.5 h-7 rounded-full ring-2 ring-indigo-400 bg-indigo-500/15 pointer-events-none animate-pulse shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
+
+                {/* Arrow & Helper Tooltip positioned BELOW the top bar so the bars are completely visible */}
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center animate-bounce z-50">
+                  <div className="w-2.5 h-2.5 rotate-45 bg-indigo-600 mb-[-5px]" />
+                  <span className="text-[11px] font-bold text-white bg-indigo-600 px-3.5 py-1 rounded-full shadow-2xl border border-indigo-400/50 whitespace-nowrap">
+                    👆 ဤအပေါ်ဘားတန်းများကို နှိပ်၍ စာမျက်နှာ ရွေးချယ်နိုင်ပါသည်
                   </span>
                 </div>
+
                 {/* Visual indicator for Bottom Nav */}
                 <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center animate-bounce">
-                  <span className="text-[11px] font-bold text-indigo-300 bg-black/85 px-3 py-1 rounded-full border border-indigo-500/40 shadow-xl mb-1">
-                    👈 Swipe သို့မဟုတ် &lt; &gt; နှိပ်ပါ 👉
+                  <span className="text-[11px] font-bold text-indigo-300 bg-black/90 px-3.5 py-1 rounded-full border border-indigo-500/40 shadow-xl mb-1 whitespace-nowrap">
+                    👈 ဘယ်/ညာ ပွတ်ဆွဲပါ (Swipe) သို့မဟုတ် &lt; &gt; နှိပ်ပါ 👉
                   </span>
                   <div className="w-2 h-2 rotate-45 bg-indigo-500" />
                 </div>
@@ -417,7 +437,7 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
             {guideStep === 2 && (
               <>
                 {/* Visual indicator for Eye icon */}
-                <div className="absolute top-3.5 right-12 pointer-events-none animate-pulse">
+                <div className="absolute top-8.5 right-12 pointer-events-none animate-pulse">
                   <div className="w-9 h-9 rounded-full ring-2 ring-indigo-400 ring-offset-2 ring-offset-black/60 shadow-[0_0_15px_rgba(99,102,241,0.8)]" />
                   <div className="absolute -bottom-8 right-0 text-[10px] whitespace-nowrap font-bold text-indigo-300 bg-black/90 px-2.5 py-0.5 rounded-full border border-indigo-500/40 shadow-xl">
                     👆 ဤခလုတ်ဖြင့် ဖျောက်ထားနိုင်သည်
