@@ -4,10 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Compass, Cpu, Globe, Moon, Sun } from 'lucide-react';
 
 export default function HomePage() {
+  const [mounted, setMounted] = useState<boolean>(false);
   const [time, setTime] = useState<string>('');
   const [isDark, setIsDark] = useState<boolean>(true);
 
   useEffect(() => {
+    setMounted(true);
     const updateTime = () => {
       const now = new Date();
       setTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -16,6 +18,10 @@ export default function HomePage() {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  if (!mounted) {
+    return <div className="min-h-screen bg-[#090a0f]" />;
+  }
 
   return (
     <div className={`min-h-screen flex flex-col justify-between font-sans transition-colors duration-300 ${

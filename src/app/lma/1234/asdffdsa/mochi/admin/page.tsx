@@ -25,7 +25,9 @@ import {
   FileCode,
   CheckCircle2,
   Sun,
-  Moon
+  Moon,
+  Loader2,
+  Upload
 } from 'lucide-react';
 import { ShowcaseIframe } from '@/components/ShowcaseIframe';
 import { samplePagesHtml, generateRandomToken, slugify } from '@/lib/sample-data';
@@ -70,22 +72,28 @@ export default function AdminPage() {
   const [copiedSql, setCopiedSql] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  // Initialize theme from localStorage
+  // Loading states to prevent duplicate submissions
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isSavingPage, setIsSavingPage] = useState(false);
+
+  // Client-side mount state to completely prevent hydration mismatches
+  const [mounted, setMounted] = useState(false);
+  const [origin, setOrigin] = useState('');
+
+  // Initialize theme and origin on client mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('html_showcase_admin_theme');
-      if (saved === 'light' || saved === 'dark') {
-        setAdminTheme(saved);
-      }
+    setMounted(true);
+    setOrigin(window.location.origin);
+    const saved = localStorage.getItem('html_showcase_admin_theme');
+    if (saved === 'light' || saved === 'dark') {
+      setAdminTheme(saved);
     }
   }, []);
 
   const toggleTheme = () => {
     const next = adminTheme === 'dark' ? 'light' : 'dark';
     setAdminTheme(next);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('html_showcase_admin_theme', next);
-    }
+    localStorage.setItem('html_showcase_admin_theme', next);
   };
 
   // Show temporary feedback toast
@@ -154,9 +162,10 @@ export default function AdminPage() {
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!templateForm.name.trim()) return;
+    if (!templateForm.name.trim() || isSavingTemplate) return;
 
     try {
+      setIsSavingTemplate(true);
       const isEdit = Boolean(templateForm.id);
       const url = isEdit ? `/api/templates/${templateForm.id}` : '/api/templates';
       const method = isEdit ? 'PUT' : 'POST';
@@ -180,6 +189,9 @@ export default function AdminPage() {
       }
     } catch (e) {
       console.error('Failed to save template:', e);
+      showToast('Error saving template');
+    } finally {
+      setIsSavingTemplate(false);
     }
   };
 
@@ -205,7 +217,7 @@ export default function AdminPage() {
     setEditingPageId(null);
     setPageForm({
       name: '',
-      html_code: samplePagesHtml[0].html_code
+      html_code: ''
     });
     setIsPageModalOpen(true);
   };
@@ -219,11 +231,90 @@ export default function AdminPage() {
     setIsPageModalOpen(true);
   };
 
-  const handleSavePage = async (e: React.FormEvent) => {
+  // Local File Upload handlers
+  const handleFileSelectInModal = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const cleanName = file.name.replace(/\.(html|htm)$/i, '');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = (event.target?.result as string) || '';
+      setPageForm({
+        name: cleanName,
+        html_code: content,
+      });
+      showToast(`Loaded "${file.name}" (${(file.size / 1024).toFixed(1)} KB)`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const [isDragging, setIsDragging] = useState(false);
+  const handleDropHtml = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!selectedTemplateId || !pageForm.name.trim() || !pageForm.html_code.trim()) return;
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const cleanName = file.name.replace(/\.(html|htm)$/i, '');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = (event.target?.result as string) || '';
+      setPageForm({
+        name: cleanName,
+        html_code: content,
+      });
+      showToast(`Loaded "${file.name}" (${(file.size / 1024).toFixed(1)} KB)`);
+    };
+    reader.readAsText(file);
+  };
+
+  // Batch upload multiple .html files from computer
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const handleBatchUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedTemplateId) return;
 
     try {
+      setIsBatchUploading(true);
+      showToast(`Uploading ${files.length} HTML files...`);
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.name.match(/\.(html|htm)$/i)) continue;
+
+        const cleanName = file.name.replace(/\.(html|htm)$/i, '');
+        const content = await file.text();
+
+        await fetch(`/api/templates/${selectedTemplateId}/pages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cleanName,
+            html_code: content
+          })
+        });
+      }
+
+      showToast(`Successfully added ${files.length} pages from local files!`);
+      await loadTemplatePages(selectedTemplateId);
+      await loadTemplates();
+    } catch (err) {
+      console.error('Batch upload failed:', err);
+      showToast('Error uploading files');
+    } finally {
+      setIsBatchUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSavePage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTemplateId || !pageForm.name.trim() || !pageForm.html_code.trim() || isSavingPage) return;
+
+    try {
+      setIsSavingPage(true);
       const isEdit = Boolean(editingPageId);
       const url = isEdit 
         ? `/api/templates/${selectedTemplateId}/pages/${editingPageId}`
@@ -241,9 +332,14 @@ export default function AdminPage() {
         showToast(isEdit ? 'Page updated successfully!' : 'Page added to template!');
         await loadTemplatePages(selectedTemplateId);
         await loadTemplates();
+      } else {
+        showToast('Failed to save page');
       }
     } catch (e) {
       console.error('Failed to save page:', e);
+      showToast('Error saving page');
+    } finally {
+      setIsSavingPage(false);
     }
   };
 
@@ -300,8 +396,8 @@ export default function AdminPage() {
 
   // Helper to copy public link
   const copyPublicUrl = (slug: string, token: string, id: string) => {
-    if (typeof window !== 'undefined') {
-      const fullUrl = `${window.location.origin}/${slug}/${token}`;
+    const fullUrl = origin ? `${origin}/${slug}/${token}` : `/${slug}/${token}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(fullUrl);
       setCopiedLinkIndex(id);
       setTimeout(() => setCopiedLinkIndex(null), 2000);
@@ -310,10 +406,7 @@ export default function AdminPage() {
   };
 
   const getPublicUrl = (slug: string, token: string) => {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/${slug}/${token}`;
-    }
-    return `/${slug}/${token}`;
+    return origin ? `${origin}/${slug}/${token}` : `/${slug}/${token}`;
   };
 
   // Seed sample data
@@ -357,6 +450,17 @@ ALTER TABLE pages ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public templates" ON templates FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-400 flex items-center justify-center font-sans text-xs">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+          <span>Loading Admin Console...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen font-sans flex flex-col transition-colors duration-200 ${
@@ -661,6 +765,29 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
 
+                  {/* Batch Upload Button */}
+                  <label className={`cursor-pointer flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition active:scale-95 ${
+                    isBatchUploading ? 'opacity-60 pointer-events-none' : ''
+                  } ${
+                    isLight
+                      ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700'
+                  }`}>
+                    {isBatchUploading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5 text-indigo-500" />
+                    )}
+                    <span>{isBatchUploading ? 'Uploading...' : 'Upload HTML Files'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".html,.htm,text/html"
+                      onChange={handleBatchUploadFiles}
+                      className="hidden"
+                    />
+                  </label>
+
                   <button
                     onClick={handleOpenAddPage}
                     className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition active:scale-95"
@@ -844,10 +971,10 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                       slug: templateForm.slug ? templateForm.slug : slugify(name)
                     });
                   }}
-                  className={`w-full rounded-xl px-3.5 py-2 text-sm border focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none transition-all duration-150 ${
                     isLight 
-                      ? 'bg-zinc-50 border-zinc-300 text-zinc-900 placeholder-zinc-400' 
-                      : 'bg-zinc-800 border-zinc-700 text-white placeholder-zinc-500'
+                      ? 'bg-zinc-50/80 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10' 
+                      : 'bg-zinc-950/80 border-zinc-800 text-zinc-100 placeholder-zinc-500 focus:bg-zinc-900 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10'
                   }`}
                 />
               </div>
@@ -861,10 +988,10 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                   placeholder="e.g. mobile-banking-app"
                   value={templateForm.slug}
                   onChange={(e) => setTemplateForm({ ...templateForm, slug: slugify(e.target.value) })}
-                  className={`w-full rounded-xl px-3.5 py-2 text-sm font-mono border focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full rounded-xl px-3.5 py-2.5 text-sm font-mono border outline-none transition-all duration-150 ${
                     isLight 
-                      ? 'bg-zinc-50 border-zinc-300 text-zinc-900 placeholder-zinc-400' 
-                      : 'bg-zinc-800 border-zinc-700 text-white placeholder-zinc-500'
+                      ? 'bg-zinc-50/80 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10' 
+                      : 'bg-zinc-950/80 border-zinc-800 text-zinc-100 placeholder-zinc-500 focus:bg-zinc-900 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10'
                   }`}
                 />
                 <span className={`text-[10px] mt-1 block ${isLight ? 'text-zinc-500' : 'text-zinc-400'}`}>
@@ -904,10 +1031,10 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                 <select
                   value={templateForm.device_frame}
                   onChange={(e) => setTemplateForm({ ...templateForm, device_frame: e.target.value as DeviceFrameType })}
-                  className={`w-full rounded-xl px-3.5 py-2 text-sm border focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none transition-all duration-150 ${
                     isLight 
-                      ? 'bg-zinc-50 border-zinc-300 text-zinc-900' 
-                      : 'bg-zinc-800 border-zinc-700 text-white'
+                      ? 'bg-zinc-50/80 border-zinc-200 text-zinc-900 focus:bg-white focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10' 
+                      : 'bg-zinc-950/80 border-zinc-800 text-zinc-100 focus:bg-zinc-900 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10'
                   }`}
                 >
                   <option value="mobile">Mobile Frame (iPhone 390 × 844)</option>
@@ -919,8 +1046,9 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
               <div className={`flex justify-end gap-2 pt-3 border-t ${isLight ? 'border-zinc-200' : 'border-zinc-800'}`}>
                 <button
                   type="button"
+                  disabled={isSavingTemplate}
                   onClick={() => setIsTemplateModalOpen(false)}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 ${
                     isLight ? 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
                 >
@@ -928,9 +1056,11 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30"
+                  disabled={isSavingTemplate}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2"
                 >
-                  Save Template
+                  {isSavingTemplate && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingTemplate ? 'Saving...' : (templateForm.id ? 'Update Template' : 'Save Template')}</span>
                 </button>
               </div>
             </form>
@@ -946,7 +1076,7 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
           <div className={`border rounded-3xl p-6 w-full max-w-3xl shadow-2xl text-left flex flex-col max-h-[90vh] ${
             isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-900 border-zinc-800 text-white'
           }`}>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-bold">
                 {editingPageId ? 'Edit Page HTML' : 'Add New Showcase Page'}
               </h3>
@@ -958,7 +1088,47 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
               </button>
             </div>
 
-            <form onSubmit={handleSavePage} className="flex-1 flex flex-col space-y-4 overflow-hidden">
+            {/* Local HTML File Picker Banner */}
+            <div className={`mb-4 p-3 rounded-2xl border flex items-center justify-between gap-3 transition ${
+              isLight 
+                ? 'bg-indigo-50/70 border-indigo-200/90' 
+                : 'bg-indigo-950/20 border-indigo-900/50'
+            }`}>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold ${isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
+                    Choose local .html file
+                  </p>
+                  <p className={`text-[11px] truncate ${isLight ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                    Auto-fills screen name and HTML code from your file
+                  </p>
+                </div>
+              </div>
+
+              <label className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition active:scale-95">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Browse .html</span>
+                <input
+                  type="file"
+                  accept=".html,.htm,text/html"
+                  onChange={handleFileSelectInModal}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <form 
+              onSubmit={handleSavePage} 
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDropHtml}
+              className={`flex-1 flex flex-col space-y-4 overflow-hidden relative transition-all ${
+                isDragging ? 'ring-2 ring-indigo-500 ring-dashed rounded-2xl p-1' : ''
+              }`}
+            >
               <div>
                 <label className={`block text-xs font-semibold mb-1 ${isLight ? 'text-zinc-700' : 'text-zinc-300'}`}>
                   Page / Screen Name *
@@ -969,10 +1139,10 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                   placeholder="e.g. Design 1 - Top Up - wallet"
                   value={pageForm.name}
                   onChange={(e) => setPageForm({ ...pageForm, name: e.target.value })}
-                  className={`w-full rounded-xl px-3.5 py-2 text-sm border focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none transition-all duration-150 ${
                     isLight 
-                      ? 'bg-zinc-50 border-zinc-300 text-zinc-900 placeholder-zinc-400' 
-                      : 'bg-zinc-800 border-zinc-700 text-white placeholder-zinc-500'
+                      ? 'bg-zinc-50/80 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10' 
+                      : 'bg-zinc-950/80 border-zinc-800 text-zinc-100 placeholder-zinc-500 focus:bg-zinc-900 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10'
                   }`}
                 />
               </div>
@@ -1009,13 +1179,13 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                 <textarea
                   required
                   rows={12}
-                  placeholder="Paste your raw HTML code here... <!DOCTYPE html><html>...</html>"
+                  placeholder="Paste your raw HTML code here... (or choose a sample above)"
                   value={pageForm.html_code}
                   onChange={(e) => setPageForm({ ...pageForm, html_code: e.target.value })}
-                  className={`w-full flex-1 rounded-xl p-3 font-mono text-xs border focus:outline-hidden focus:ring-2 focus:ring-indigo-500 resize-none leading-relaxed ${
+                  className={`w-full flex-1 rounded-xl p-3.5 font-mono text-xs border outline-none resize-none leading-relaxed transition-all duration-150 ${
                     isLight
-                      ? 'bg-zinc-50 border-zinc-300 text-zinc-900'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-200'
+                      ? 'bg-zinc-50/80 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-200 placeholder-zinc-600 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10'
                   }`}
                 />
               </div>
@@ -1027,8 +1197,9 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={isSavingPage}
                     onClick={() => setIsPageModalOpen(false)}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 ${
                       isLight ? 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                     }`}
                   >
@@ -1036,9 +1207,11 @@ CREATE POLICY "Public pages" ON pages FOR ALL USING (true) WITH CHECK (true);`;
                   </button>
                   <button
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30"
+                    disabled={isSavingPage}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2"
                   >
-                    Save Page
+                    {isSavingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{isSavingPage ? 'Saving HTML Page...' : (editingPageId ? 'Update Page' : 'Save Page')}</span>
                   </button>
                 </div>
               </div>
