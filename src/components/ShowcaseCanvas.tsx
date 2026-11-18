@@ -21,7 +21,11 @@ import {
   Grid, 
   Move,
   Sun,
-  Moon
+  Moon,
+  Eye,
+  EyeOff,
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 
 interface ShowcaseCanvasProps {
@@ -38,6 +42,7 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
   const [canvasTheme, setCanvasTheme] = useState<'light' | 'dark'>('light');
   const [isCopied, setIsCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   
   // Panning state (desktop only)
   const [isPanning, setIsPanning] = useState(false);
@@ -49,6 +54,26 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchDelta, setTouchDelta] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+
+  // 2-Step Mobile Driver Guide (Burmese)
+  const [showMobileGuide, setShowMobileGuide] = useState(false);
+  const [guideStep, setGuideStep] = useState<1 | 2>(1);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      const seen = localStorage.getItem('html_showcase_mobile_guide_seen');
+      if (!seen) {
+        setShowMobileGuide(true);
+      }
+    }
+  }, [mounted]);
+
+  const handleDismissGuide = () => {
+    setShowMobileGuide(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('html_showcase_mobile_guide_seen', 'true');
+    }
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -207,60 +232,101 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
   }
 
   // ================================================================
-  // MOBILE LAYOUT — Full-screen swipeable slideshow, no device frames
+  // MOBILE LAYOUT — 100% Full-Screen App Showcase (Floating Overlays)
   // ================================================================
   if (isMobile) {
     return (
-      <div className="fixed inset-0 flex flex-col bg-[#0a0b10] text-white select-none">
-        {/* Mobile Header — minimal, translucent */}
-        <header className="relative z-30 flex items-center justify-between px-4 py-3 bg-[#0a0b10]/80 backdrop-blur-xl border-b border-white/[0.06]">
-          <div className="flex flex-col min-w-0 flex-1 mr-3">
-            <h1 className="text-[13px] font-semibold tracking-tight truncate text-zinc-100">
-              {template.name}
-            </h1>
-            <span className="text-[10px] text-zinc-500 mt-0.5">
-              {activePageIndex + 1} of {template.pages.length}
-            </span>
-          </div>
-
-          <button
-            onClick={handleCopyLink}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 ${
-              isCopied
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                : 'bg-white/10 text-zinc-300 border border-white/10'
-            }`}
-          >
-            {isCopied ? (
-              <>
-                <Check className="w-3 h-3" />
-                <span>Copied</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="w-3 h-3" />
-                <span>Share</span>
-              </>
-            )}
-          </button>
-        </header>
-
-        {/* Screen name bar */}
-        <div className="relative z-20 px-4 py-2 bg-[#0a0b10]/60 backdrop-blur-sm">
-          <p className="text-[11px] font-medium text-zinc-400 truncate">
-            {activePage?.name}
-          </p>
+      <div className="fixed inset-0 w-full h-full bg-[#0a0b10] text-white select-none overflow-hidden">
+        {/* Story Progress Indicators at the very top edge */}
+        <div className="absolute top-1.5 left-2.5 right-2.5 z-40 flex gap-1 pointer-events-auto">
+          {template.pages.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActivePageIndex(idx)}
+              className="h-2 flex-1 flex items-center py-0.5 focus:outline-none"
+              title={`Jump to screen ${idx + 1}`}
+            >
+              <div
+                className={`h-[2.5px] w-full rounded-full transition-all duration-300 ${
+                  idx === activePageIndex
+                    ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.9)]'
+                    : idx < activePageIndex
+                    ? 'bg-white/40'
+                    : 'bg-white/15'
+                }`}
+              />
+            </button>
+          ))}
         </div>
 
-        {/* Full-screen HTML content area */}
-        <div
-          className="flex-1 relative overflow-hidden"
+        {/* Floating Top Header Pill — Does NOT take layout space */}
+        {showControls && (
+          <div className="absolute top-4 left-3 right-3 z-40 flex items-center justify-between pointer-events-none animate-in fade-in slide-in-from-top-1 duration-200">
+            {/* Left: Template title & page counter */}
+            <div className="pointer-events-auto flex items-center gap-2 bg-[#0a0b10]/80 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1 shadow-lg shadow-black/50">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <h1 className="text-[11px] font-semibold text-zinc-100 tracking-tight truncate max-w-[150px]">
+                {template.name}
+              </h1>
+              <span className="text-[10px] text-zinc-400 font-mono pl-1 border-l border-white/10">
+                {activePageIndex + 1}/{template.pages.length}
+              </span>
+            </div>
+
+            {/* Right: Help Guide + Hide controls + Share button */}
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setGuideStep(1);
+                  setShowMobileGuide(true);
+                }}
+                className="p-1.5 rounded-full bg-[#0a0b10]/80 backdrop-blur-xl border border-white/10 text-zinc-400 hover:text-white transition active:scale-95 shadow-lg shadow-black/50"
+                title="လမ်းညွှန်ကြည့်ရန် (Help Guide)"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={() => setShowControls(false)}
+                className="p-1.5 rounded-full bg-[#0a0b10]/80 backdrop-blur-xl border border-white/10 text-zinc-400 hover:text-white transition active:scale-95 shadow-lg shadow-black/50"
+                title="Hide controls for clean view"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={handleCopyLink}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium backdrop-blur-xl border shadow-lg shadow-black/50 transition active:scale-95 ${
+                  isCopied
+                    ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                    : 'bg-[#0a0b10]/80 text-zinc-200 border-white/10 hover:text-white'
+                }`}
+              >
+                {isCopied ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3 h-3" />
+                    <span>Share</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 100% FULL-SCREEN HTML SHOWCASE CONTENT */}
+        <div 
+          className="absolute inset-0 z-0 w-full h-full"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
           {template.pages.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+            <div className="w-full h-full flex flex-col items-center justify-center text-center p-8">
               <div className="text-4xl mb-3">📄</div>
               <h2 className="text-sm font-semibold text-zinc-300">No pages yet</h2>
               <p className="text-[11px] text-zinc-500 mt-1">
@@ -269,7 +335,7 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
             </div>
           ) : (
             <div
-              className="absolute inset-0 flex transition-transform duration-300 ease-out"
+              className="w-full h-full flex transition-transform duration-300 ease-out"
               style={{
                 transform: `translateX(calc(-${activePageIndex * 100}% + ${isSwiping ? touchDelta : 0}px))`,
                 transitionDuration: isSwiping ? '0ms' : '300ms',
@@ -285,49 +351,172 @@ export function ShowcaseCanvas({ template }: ShowcaseCanvasProps) {
               ))}
             </div>
           )}
-
-          {/* Swipe hint overlay on edges */}
-          {activePageIndex > 0 && (
-            <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-black/20 to-transparent pointer-events-none z-10" />
-          )}
-          {activePageIndex < template.pages.length - 1 && (
-            <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-black/20 to-transparent pointer-events-none z-10" />
-          )}
         </div>
 
-        {/* Bottom navigation — dot indicators + prev/next */}
-        <nav className="relative z-30 flex items-center justify-between px-5 py-4 bg-[#0a0b10]/80 backdrop-blur-xl border-t border-white/[0.06]">
-          <button
-            onClick={() => setActivePageIndex(prev => Math.max(0, prev - 1))}
-            disabled={activePageIndex === 0}
-            className="p-2 rounded-full bg-white/10 disabled:opacity-20 active:scale-90 transition"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          {/* Dots */}
-          <div className="flex items-center gap-2 max-w-[60%] overflow-x-auto scrollbar-hide">
-            {template.pages.map((_, idx) => (
+        {/* Floating Bottom Navigation Pill — Does NOT take layout space */}
+        {showControls ? (
+          <div className="absolute bottom-4 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
+            <div className="pointer-events-auto flex items-center gap-2 bg-[#0a0b10]/85 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 shadow-2xl shadow-black/70 max-w-full">
               <button
-                key={idx}
-                onClick={() => setActivePageIndex(idx)}
-                className={`shrink-0 rounded-full transition-all duration-200 ${
-                  idx === activePageIndex
-                    ? 'w-6 h-2 bg-indigo-500'
-                    : 'w-2 h-2 bg-zinc-600 active:bg-zinc-400'
-                }`}
-              />
-            ))}
-          </div>
+                onClick={() => setActivePageIndex(prev => Math.max(0, prev - 1))}
+                disabled={activePageIndex === 0}
+                className="p-1 rounded-full text-zinc-300 hover:text-white disabled:opacity-20 active:scale-90 transition"
+                title="Previous screen"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
 
+              <span className="text-[11px] font-semibold text-zinc-200 truncate max-w-[170px] px-2">
+                {activePage?.name || `Screen ${activePageIndex + 1}`}
+              </span>
+
+              <button
+                onClick={() => setActivePageIndex(prev => Math.min(template.pages.length - 1, prev + 1))}
+                disabled={activePageIndex === template.pages.length - 1}
+                className="p-1 rounded-full text-zinc-300 hover:text-white disabled:opacity-20 active:scale-90 transition"
+                title="Next screen"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Subtle toggle-back button when controls are hidden */
           <button
-            onClick={() => setActivePageIndex(prev => Math.min(template.pages.length - 1, prev + 1))}
-            disabled={activePageIndex === template.pages.length - 1}
-            className="p-2 rounded-full bg-white/10 disabled:opacity-20 active:scale-90 transition"
+            onClick={() => setShowControls(true)}
+            className="absolute bottom-4 right-4 z-40 bg-[#0a0b10]/80 backdrop-blur-xl border border-white/15 text-white/80 p-2 rounded-full shadow-lg active:scale-95 transition"
+            title="Show controls"
           >
-            <ChevronRight className="w-4 h-4" />
+            <Eye className="w-4 h-4" />
           </button>
-        </nav>
+        )}
+        {/* ========================================================== */}
+        {/* 2-STEP MOBILE ONBOARDING GUIDE (BURMESE)                   */}
+        {/* ========================================================== */}
+        {showMobileGuide && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex flex-col justify-end p-4 animate-in fade-in duration-200">
+            {/* Guide Spotlight highlights based on step */}
+            {guideStep === 1 && (
+              <>
+                {/* Visual indicator for Top Story Bars */}
+                <div className="absolute top-1 left-2 right-2 h-7 rounded-xl ring-2 ring-indigo-400 ring-offset-2 ring-offset-black/50 pointer-events-none animate-pulse flex items-end justify-center pb-0.5">
+                  <span className="text-[10px] font-bold text-indigo-300 bg-black/80 px-2 py-0.5 rounded-full border border-indigo-500/40 shadow-lg">
+                    👆 နှိပ်၍ တိုက်ရိုက်ကူးပြောင်းနိုင်သည်
+                  </span>
+                </div>
+                {/* Visual indicator for Bottom Nav */}
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center animate-bounce">
+                  <span className="text-[11px] font-bold text-indigo-300 bg-black/85 px-3 py-1 rounded-full border border-indigo-500/40 shadow-xl mb-1">
+                    👈 Swipe သို့မဟုတ် &lt; &gt; နှိပ်ပါ 👉
+                  </span>
+                  <div className="w-2 h-2 rotate-45 bg-indigo-500" />
+                </div>
+              </>
+            )}
+
+            {guideStep === 2 && (
+              <>
+                {/* Visual indicator for Eye icon */}
+                <div className="absolute top-3.5 right-12 pointer-events-none animate-pulse">
+                  <div className="w-9 h-9 rounded-full ring-2 ring-indigo-400 ring-offset-2 ring-offset-black/60 shadow-[0_0_15px_rgba(99,102,241,0.8)]" />
+                  <div className="absolute -bottom-8 right-0 text-[10px] whitespace-nowrap font-bold text-indigo-300 bg-black/90 px-2.5 py-0.5 rounded-full border border-indigo-500/40 shadow-xl">
+                    👆 ဤခလုတ်ဖြင့် ဖျောက်ထားနိုင်သည်
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Guide Card Sheet */}
+            <div className="bg-[#121422] border border-indigo-500/30 rounded-3xl p-5 shadow-2xl text-white relative animate-in slide-in-from-bottom-4 duration-300">
+              {/* Top row: badge + skip button */}
+              <div className="flex items-center justify-between mb-3.5">
+                <span className="text-[11px] font-semibold font-mono px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  အသုံးပြုနည်းလမ်းညွှန် ({guideStep}/၂)
+                </span>
+                <button
+                  onClick={handleDismissGuide}
+                  className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded-lg transition active:scale-95"
+                >
+                  ကျော်မည် (Skip)
+                </button>
+              </div>
+
+              {guideStep === 1 ? (
+                /* STEP 1: Page Navigation */
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight">
+                        စာမျက်နှာများ ကူးပြောင်းကြည့်ရှုရန်
+                      </h3>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Page Navigation & Pagination
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-zinc-300 leading-relaxed pt-1">
+                    ဖုန်းစခရင်ကို <span className="text-indigo-300 font-semibold">ဘယ်/ညာ ပွတ်ဆွဲခြင်း (Swipe)</span>၊ အောက်ခြေရှိ <span className="text-indigo-300 font-semibold">&lt; &gt; ခလုတ်များ</span> သို့မဟုတ် အပေါ်ဆုံးရှိ <span className="text-indigo-300 font-semibold">ဘားတန်းများကို နှိပ်၍</span> စာမျက်နှာများကို အလွယ်တကူ ကူးပြောင်းကြည့်ရှုနိုင်ပါသည်။
+                  </p>
+
+                  <div className="pt-3 flex items-center justify-between border-t border-white/10">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-5 h-1.5 rounded-full bg-indigo-500" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+                    </div>
+
+                    <button
+                      onClick={() => setGuideStep(2)}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95 transition"
+                    >
+                      <span>ရှေ့သို့</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* STEP 2: Hide Controls / Clean View */
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                      <EyeOff className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight">
+                        အချက်ပြဘားများကို ဖျောက်ထားရန်
+                      </h3>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Clean Full-Screen View
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-zinc-300 leading-relaxed pt-1">
+                    အပေါ်ဘက်ရှိ <span className="text-indigo-300 font-semibold">မျက်လုံးပုံစံခလုတ် (👁)</span> ကို နှိပ်၍ ခလုတ်များနှင့် အချက်ပြဘားများကို ဖျောက်ထားနိုင်ပြီး ဖုန်း Screen အပြည့် သီးသန့် ကြည့်ရှုနိုင်ပါသည်။
+                  </p>
+
+                  <div className="pt-3 flex items-center justify-between border-t border-white/10">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+                      <div className="w-5 h-1.5 rounded-full bg-indigo-500" />
+                    </div>
+
+                    <button
+                      onClick={handleDismissGuide}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 active:scale-95 transition"
+                    >
+                      နားလည်ပါပြီ
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

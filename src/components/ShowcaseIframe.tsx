@@ -18,9 +18,12 @@ export function ShowcaseIframe({
   const processedHtml = useMemo(() => {
     if (!htmlCode) return '<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;">Empty Screen</body></html>';
 
-    // If it's already a full HTML document, inject smooth font rendering & styling
+    // If it's already a full HTML document, inject viewport meta if missing, smooth font rendering & styling
     if (htmlCode.includes('<html') || htmlCode.includes('<!DOCTYPE')) {
+      const hasViewport = htmlCode.includes('name="viewport"') || htmlCode.includes("name='viewport'");
+      const viewportMeta = hasViewport ? '' : '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
       const injectStyle = `
+        ${viewportMeta}
         <style>
           /* Clean scrollbar styling */
           ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -28,6 +31,7 @@ export function ShowcaseIframe({
           ::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.3); border-radius: 4px; }
           ::-webkit-scrollbar-thumb:hover { background: rgba(150, 150, 150, 0.5); }
           * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+          html, body { min-height: 100%; margin: 0; }
         </style>
       `;
       if (htmlCode.includes('</head>')) {
